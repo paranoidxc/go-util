@@ -1,7 +1,10 @@
 # go-util
 
+# Queue
 
-# Queue Usage
+This package provides a generic implementation of a queue data structure in Go.
+
+For more detail see [Queue README](./queue/README.md)
 
 ```go
 // init

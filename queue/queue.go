@@ -7,6 +7,7 @@ import (
 
 const defBufferSize = 256
 
+// Queue represents a generic queue data structure.
 type Queue[T any] struct {
 	buffer  []T
 	cnt     int
@@ -15,6 +16,11 @@ type Queue[T any] struct {
 	minSize int
 }
 
+// New creates a new instance of the Queue data structure with the specified buffer size and minimum size.
+// If the buffer size is less than 0, it will be set to the default buffer size.
+// If the minimum size is less than 0, it will also be set to the default buffer size.
+// The buffer size will be adjusted to the next power of 2 greater than or equal to the minimum size.
+// The returned value is a pointer to the created Queue.
 func New[T any](optBufSize int, optMinSize int) *Queue[T] {
 	if optBufSize < 0 {
 		optBufSize = defBufferSize
@@ -43,6 +49,8 @@ func New[T any](optBufSize int, optMinSize int) *Queue[T] {
 	}
 }
 
+// Len returns the number of elements in the queue.
+// If the queue is nil, it returns 0.
 func (q *Queue[T]) Len() int {
 	if nil == q {
 		return 0
@@ -51,6 +59,9 @@ func (q *Queue[T]) Len() int {
 	return q.cnt
 }
 
+// Printf prints the content of the buffer in the queue.
+// It prints each element on a new line.
+// If the queue is empty, it prints an empty line.
 func (q *Queue[T]) Printf() {
 	fmt.Println("buffer content [")
 	if q.cnt > 0 {
@@ -63,6 +74,8 @@ func (q *Queue[T]) Printf() {
 	fmt.Println("]")
 }
 
+// Push adds an item to the end of the queue.
+// If the buffer is full, it expands the buffer before adding the item.
 func (q *Queue[T]) Push(item T) {
 	q.expandBuffIfNeed()
 
@@ -72,6 +85,8 @@ func (q *Queue[T]) Push(item T) {
 	q.cnt++
 }
 
+// Pop removes and returns the item at the front of the queue.
+// If the queue is empty, it returns an error.
 func (q *Queue[T]) Pop() (T, error) {
 	if q.cnt <= 0 {
 		var empty T
@@ -88,6 +103,8 @@ func (q *Queue[T]) Pop() (T, error) {
 	return ret, nil
 }
 
+// Peek returns the item at the front of the queue without removing it.
+// If the queue is empty, it returns an error.
 func (q *Queue[T]) Peek() (T, error) {
 	if q.cnt <= 0 {
 		var empty T
@@ -97,6 +114,8 @@ func (q *Queue[T]) Peek() (T, error) {
 	return ret, nil
 }
 
+// UnShift adds an item to the front of the queue.
+// If the buffer is full, it expands the buffer before adding the item.
 func (q *Queue[T]) UnShift(item T) {
 	q.expandBuffIfNeed()
 
@@ -105,6 +124,7 @@ func (q *Queue[T]) UnShift(item T) {
 	q.cnt++
 }
 
+// expandBuffIfNeed expands the buffer if it is full.
 func (q *Queue[T]) expandBuffIfNeed() {
 	if q.cnt != len(q.buffer) {
 		return
@@ -120,12 +140,14 @@ func (q *Queue[T]) expandBuffIfNeed() {
 	q.resize()
 }
 
+// shrink shrinks the buffer if it is more than 4 times larger than the number of elements.
 func (q *Queue[T]) shrink() {
 	if len(q.buffer) > q.minSize && (q.cnt<<2) == len(q.buffer) {
 		q.resize()
 	}
 }
 
+// resize resizes the buffer to accommodate more elements.
 func (q *Queue[T]) resize() {
 	newBuf := make([]T, q.cnt<<1)
 	if q.tail > q.head {
@@ -140,10 +162,12 @@ func (q *Queue[T]) resize() {
 	q.buffer = newBuf
 }
 
+// prev returns the previous index in the buffer.
 func (q *Queue[T]) prev(i int) int {
 	return (i - 1) & (len(q.buffer) - 1)
 }
 
+// next returns the next index in the buffer.
 func (q *Queue[T]) next(i int) int {
 	return (i + 1) & (len(q.buffer) - 1)
 }
