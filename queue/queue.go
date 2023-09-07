@@ -52,7 +52,7 @@ func (q *Queue[T]) Len() int {
 }
 
 func (q *Queue[T]) Printf() {
-	fmt.Println("\nbuffer content [")
+	fmt.Println("buffer content [")
 	if q.cnt > 0 {
 		start := q.head
 		for i := 0; i < q.cnt; i++ {
