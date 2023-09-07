@@ -3,6 +3,7 @@ package queue
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 const defBufferSize = 256
@@ -14,6 +15,7 @@ type Queue[T any] struct {
 	tail    int
 	head    int
 	minSize int
+	mutex   sync.Mutex // 添加互斥锁
 }
 
 // New creates a new instance of the Queue data structure with the specified buffer size and minimum size.
@@ -77,6 +79,9 @@ func (q *Queue[T]) Printf() {
 // Push adds an item to the end of the queue.
 // If the buffer is full, it expands the buffer before adding the item.
 func (q *Queue[T]) Push(item T) {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+
 	q.expandBuffIfNeed()
 
 	q.buffer[q.tail] = item
@@ -88,6 +93,9 @@ func (q *Queue[T]) Push(item T) {
 // Pop removes and returns the item at the front of the queue.
 // If the queue is empty, it returns an error.
 func (q *Queue[T]) Pop() (T, error) {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+
 	if q.cnt <= 0 {
 		var empty T
 		return empty, errors.New("Pop() Err: queue is empty")

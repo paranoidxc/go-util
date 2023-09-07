@@ -4,23 +4,6 @@
 
 This package provides a generic implementation of a queue data structure in Go.
 
+**Note: The Queue implementation in this package is thread-safe.**
+
 For more detail see [Queue README](./queue/README.md)
-
-```go
-// init
-q := queue.New[string](1024, 32)
-var q queue.Queue[string]
-
-// put
-q.Push("World")
-q.Unshift("Hello")
-
-// get
-q.Pop()
-
-// len
-q.Len()
-
-// fmt.Printf
-q.Pringf()
-```

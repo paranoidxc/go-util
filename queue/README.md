@@ -2,6 +2,8 @@
 
 This package provides a generic implementation of a queue data structure in Go.
 
+**Note: The Queue implementation in this package is thread-safe.**
+
 ## Usage
 
 To use this package, import it into your Go code:
