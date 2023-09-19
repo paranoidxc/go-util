@@ -35,4 +35,19 @@ func main() {
 	}
 
 	db.Printf()
+
+	db.Tx(func(tx *kvdb.Tx) {
+
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Println("Recovered from panic:", r)
+			}
+		}()
+
+		val, _ := tx.Get("hello")
+		fmt.Println("tx get [hello] val:", string(val))
+		tx.Put("tx_test", []byte("val from tx"))
+		val, _ = tx.Get("tx_test")
+		fmt.Println("tx get [tx_text] val:", string(val))
+	})
 }

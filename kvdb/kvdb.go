@@ -1,7 +1,6 @@
 package kvdb
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -9,46 +8,10 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-const (
-	entryHeaderSize = 9
-)
-
-func encodeEntry(e *entry) ([]byte, error) {
-	buf := make([]byte, e.Size())
-
-	buf[0] = byte(e.mark)
-	binary.BigEndian.PutUint32(buf[1:5], e.kLen)
-	binary.BigEndian.PutUint32(buf[5:9], e.vLen)
-	copy(buf[entryHeaderSize:], e.key)
-	copy(buf[entryHeaderSize+e.kLen:], e.value)
-
-	//fmt.Printf("entry buf is: %+v\n", buf)
-	return buf, nil
-}
-
-func decodeEntry(buf []byte) (*entry, error) {
-	kLen := binary.BigEndian.Uint32(buf[1:5])
-	vLen := binary.BigEndian.Uint32(buf[5:])
-
-	e := &entry{
-		mark: EntryMark(buf[0]),
-		kLen: kLen,
-		vLen: vLen,
-	}
-
-	if len(buf) > entryHeaderSize {
-		key := make([]byte, kLen)
-		val := make([]byte, vLen)
-		copy(key, buf[entryHeaderSize:entryHeaderSize+kLen])
-		copy(val, buf[entryHeaderSize+kLen:])
-		e.key = key
-		e.value = val
-	}
-
-	return e, nil
-}
+const LogPrefix = ">>>>> "
 
 type KVDB struct {
 	mutex          sync.Mutex
@@ -64,7 +27,7 @@ func Open(opts ...Option) *KVDB {
 	db.options = newOptions(opts...)
 	db.Init()
 
-	log.Println("DB is started now")
+	log.Println(LogPrefix, "KVDB is started now")
 	return db
 }
 
@@ -74,12 +37,12 @@ func (db *KVDB) isClosed() bool {
 
 func (db *KVDB) Close() (err error) {
 	if db.isClosed() {
-		log.Println("DB has already closed")
+		log.Println(LogPrefix, "KVDB has already closed")
 		return
 	}
 
 	defer db.fd.Close()
-	defer log.Println("DB closed")
+	defer log.Println(LogPrefix, "KVDB is closed now")
 
 	db.closed.CompareAndSwap(false, true)
 	db.data = nil
@@ -88,6 +51,7 @@ func (db *KVDB) Close() (err error) {
 }
 
 func (db *KVDB) Init() {
+	log.Println(LogPrefix, "KVDB.init() start")
 	// 检查数据文件是否存在，如果不存在则创建新文件
 	_, err := os.Stat(db.options.dbFileName)
 	if err != nil {
@@ -109,8 +73,10 @@ func (db *KVDB) Init() {
 		db.data = make(map[string]*entryOffset)
 	}
 
-	buf := make([]byte, entryHeaderSize)
+	curTimeUnix := time.Now().Unix()
+	buf := make([]byte, entryMetaSize)
 	var offset int64
+
 	for {
 		if _, err := db.fd.ReadAt(buf, offset); err != nil {
 			if err == io.EOF {
@@ -125,13 +91,13 @@ func (db *KVDB) Init() {
 		}
 
 		key := make([]byte, entry.kLen)
-		if _, err = db.fd.ReadAt(key, offset+entryHeaderSize); err != nil {
+		if _, err = db.fd.ReadAt(key, offset+entryMetaSize); err != nil {
 			if err == io.EOF {
 				break
 			}
 		}
 
-		if entry.mark == EntryDeleted {
+		if entry.mark == EntryDeleted || (entry.ttl > 0 && entry.ttl < curTimeUnix) {
 			if _, ok := db.data[string(key)]; ok {
 				delete(db.data, string(key))
 			}
@@ -141,20 +107,22 @@ func (db *KVDB) Init() {
 			}
 		}
 
-		//fmt.Printf("entry %+v\n", entry)
-		//fmt.Printf("key %s\n", key)
+		//fmt.Printf("ety:%+v\n", entry)
+		//fmt.Printf("key:%s\n", key)
 
-		offset = offset + entryHeaderSize + int64(entry.kLen) + int64(entry.vLen)
+		offset = offset + entryMetaSize + int64(entry.kLen) + int64(entry.vLen)
 	}
 	db.dataFileOffset = uint64(offset)
+
+	log.Println(LogPrefix, "KBVD.init() okay")
 }
 
 func (db *KVDB) Printf() {
-	fmt.Printf("====== db Printf start ======\n")
-	buf := make([]byte, entryHeaderSize)
+	log.Println(LogPrefix, "KVDB.Printf() start")
+	buf := make([]byte, entryMetaSize)
 
 	for k, v := range db.data {
-		fmt.Printf("key is:%s \n", k)
+		fmt.Printf("key:%s \n", k)
 		//fmt.Printf("v is: %+v \n", v)
 		_, err := db.fd.ReadAt(buf, int64(v.offset))
 		if err != nil {
@@ -166,79 +134,76 @@ func (db *KVDB) Printf() {
 		val := make([]byte, entry.vLen)
 
 		//fmt.Printf("entry %+v\n", entry)
-		//fmt.Println("val offset ", int64(v.offset)+entryHeaderSize+int64(entry.kLen))
+		//fmt.Println("val offset ", int64(v.offset)+entryMetaSize+int64(entry.kLen))
 
-		_, err = db.fd.ReadAt(val, int64(v.offset)+entryHeaderSize+int64(entry.kLen))
-		fmt.Printf("val is:[%s] %+v \n", string(val), val)
+		_, err = db.fd.ReadAt(val, int64(v.offset)+entryMetaSize+int64(entry.kLen))
+		fmt.Printf("val:[%s] bytes:%+v \n", string(val), val)
 	}
-	fmt.Printf("====== db Printf end ======\n")
+
+	log.Println(LogPrefix, "KBVD.Printf() okay")
 }
 
-type entryOffset struct {
-	offset uint32 // 数据在文件中的偏移量
+func (db *KVDB) txBegin() (*Tx, error) {
+	tx := &Tx{
+		db: db,
+	}
+
+	return tx, nil
 }
 
-type entry struct {
-	mark  EntryMark // 区分是正常的还是删除的数据
-	kLen  uint32    // key的长度
-	vLen  uint32    // value的长度
-	key   []byte    // key本身
-	value []byte    // value本身
-}
-
-func (e *entry) Size() uint32 {
-	return entryHeaderSize + e.kLen + e.vLen
-}
-
-type EntryMark int
-
-const (
-	EntryNormal EntryMark = iota
-	EntryDeleted
-)
-
-func (db *KVDB) Put(key string, value []byte) {
+func (db *KVDB) Tx(fn func(tx *Tx)) {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
-	entry := &entry{
-		mark:  EntryNormal,
-		kLen:  uint32(len(key)),
-		vLen:  uint32(len(value)),
-		key:   []byte(key),
-		value: []byte(value),
-	}
+	tx, _ := db.txBegin()
+	fn(tx)
+}
 
-	byte, err := encodeEntry(entry)
+func (db *KVDB) Put(key string, value []byte) error {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
+	return db.put(key, value)
+}
+
+func (db *KVDB) put(key string, value []byte) error {
+	entry := NewEntry(key, value)
+	byte, err := entry.encode()
 	if err != nil {
-		return
+		return err
 	}
 
 	_, err = db.fd.WriteAt(byte, int64(db.dataFileOffset))
 	if err != nil {
-		return
+		return err
 	}
 
 	// 更新内存索引
 	db.data[key] = &entryOffset{offset: uint32(atomic.LoadUint64(&db.dataFileOffset))}
 	atomic.AddUint64(&db.dataFileOffset, uint64(entry.Size()))
+
+	return nil
 }
 
 func (db *KVDB) Get(key string) ([]byte, error) {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
+	return db.get(key)
+}
+
+func (db *KVDB) get(key string) ([]byte, error) {
 	entryOffset, ok := db.data[key]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 
-	buf := make([]byte, entryHeaderSize)
+	buf := make([]byte, entryMetaSize)
 	db.fd.ReadAt(buf, int64(entryOffset.offset))
 	entry, _ := decodeEntry(buf)
 
 	val := make([]byte, entry.vLen)
-	db.fd.ReadAt(val, int64(entryOffset.offset)+entryHeaderSize+int64(entry.kLen))
+	db.fd.ReadAt(val, int64(entryOffset.offset)+entryMetaSize+int64(entry.kLen))
 	return val, nil
 }
 
@@ -246,21 +211,18 @@ func (db *KVDB) Delete(key string) (err error) {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
+	return db.delete(key)
+}
+
+func (db *KVDB) delete(key string) (err error) {
 	// Search for key
 	if _, ok := db.data[string(key)]; !ok {
 		return
 	}
 
 	// Write to file
-	e := &entry{
-		mark:  EntryDeleted,
-		kLen:  uint32(len(key)),
-		vLen:  0,
-		key:   []byte(key),
-		value: nil,
-	}
-
-	byte, err := encodeEntry(e)
+	e := NewDelEntry(key)
+	byte, err := e.encode()
 	if err != nil {
 		return
 	}
